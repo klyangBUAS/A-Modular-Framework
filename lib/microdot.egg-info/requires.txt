@@ -1,0 +1,7 @@
+
+[dev]
+tox
+
+[docs]
+sphinx
+pyjwt
