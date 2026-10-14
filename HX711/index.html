@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pico W Load Cell</title>
+    <script src="static/chart.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            background: #f2f5f9;
+            color: #22303f;
+            font-family: 'Segoe UI', Arial, 'Helvetica Neue', sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+            min-height: 100vh;
+        }
+        h1 {
+            color: #12558f;
+            margin-bottom: 14px;
+            font-weight: 500;
+            letter-spacing: 0.5px;
+            font-size: 1.45rem;
+        }
+
+        .info-panel {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            align-items: center;
+            gap: 14px 40px;
+            background: #ffffff;
+            padding: 12px 26px;
+            border-radius: 12px;
+            border-left: 6px solid #1f7ae0;
+            box-shadow: 0 2px 10px rgba(20, 60, 110, 0.08);
+            margin-bottom: 16px;
+            width: 92%;
+            max-width: 900px;
+        }
+        .info-item {
+            font-size: 1rem;
+            color: #33465c;
+            letter-spacing: 0.3px;
+        }
+        .info-item b {
+            color: #12558f;
+            font-weight: 600;
+        }
+        #currentForce {
+            color: #c92a2a;
+            font-size: 1.45rem;
+            font-weight: 700;
+            margin-left: 4px;
+        }
+        .unit { color: #6b7c93; font-size: 0.9rem; }
+
+        .toolbar {
+            width: 92%;
+            max-width: 900px;
+            display: flex;
+            flex-wrap: nowrap;
+            justify-content: center;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 14px;
+        }
+        .btn {
+            border: none;
+            border-radius: 8px;
+            padding: 10px 24px;
+            font-size: 0.95rem;
+            font-family: inherit;
+            letter-spacing: 0.8px;
+            color: #ffffff;
+            cursor: pointer;
+            white-space: nowrap;
+            min-width: 110px;
+            transition: transform 0.15s, box-shadow 0.15s, opacity 0.15s;
+        }
+        .btn:hover:not(:disabled) { transform: translateY(-2px); }
+        .btn:active:not(:disabled) { transform: translateY(0); }
+        .btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+            box-shadow: none;
+            transform: none;
+        }
+        .btn-calib {
+            background: linear-gradient(135deg, #8e5cf7, #5b3fd6);
+            box-shadow: 0 4px 12px rgba(110, 80, 240, 0.25);
+        }
+        .btn-start {
+            background: linear-gradient(135deg, #22b573, #0f8f57);
+            box-shadow: 0 4px 12px rgba(20, 160, 100, 0.25);
+        }
+        .btn-pause {
+            background: linear-gradient(135deg, #f0a020, #d97706);
+            box-shadow: 0 4px 12px rgba(220, 150, 20, 0.25);
+        }
+        .btn-export {
+            background: linear-gradient(135deg, #1f7ae0, #0b5fa5);
+            box-shadow: 0 4px 12px rgba(30, 120, 220, 0.25);
+        }
+
+        .chart-container {
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 14px;
+            padding: 12px;
+            box-shadow: 0 4px 16px rgba(20, 60, 110, 0.10);
+            width: 92%;
+            max-width: 900px;
+            height: 420px;
+            position: relative;
+        }
+        #forceChart {
+            width: 100% !important;
+            height: 100% !important;
+        }
+
+        .footer {
+            margin-top: 16px;
+            color: #6b7c93;
+            font-size: 0.82rem;
+            text-align: center;
+            letter-spacing: 0.3px;
+            line-height: 1.6;
+        }
+
+        .status-led {
+            display: inline-block;
+            width: 11px;
+            height: 11px;
+            border-radius: 50%;
+            background: #16a34a;
+            box-shadow: 0 0 8px rgba(22, 163, 74, 0.8);
+            margin-right: 7px;
+            vertical-align: middle;
+        }
+        .status-led.paused {
+            background: #b0b8c4;
+            box-shadow: none;
+        }
+
+        @media (max-width: 560px) {
+            .toolbar { gap: 8px; }
+            .btn {
+                padding: 8px 12px;
+                font-size: 0.8rem;
+                min-width: 0;
+                letter-spacing: 0;
+            }
+            h1 { font-size: 1.2rem; }
+        }
+    </style>
+</head>
+<body>
+    <h1>Pico W Load Cell Monitor</h1>
+
+    <div class="info-panel">
+        <div class="info-item"><b>Force</b><span id="currentForce">--</span><span class="unit"> N</span></div>
+        <div class="info-item"><b>Samples</b> <span id="sampleCount">0</span></div>
+        <div class="info-item">
+            <span class="status-led paused" id="statusLed"></span>
+            <span id="statusText">Paused</span>
+        </div>
+    </div>
+
+    <div class="toolbar">
+        <button id="calibBtn"  class="btn btn-calib"  type="button">Calibrate</button>
+        <button id="startBtn"  class="btn btn-start"  type="button">Start</button>
+        <button id="pauseBtn"  class="btn btn-pause"  type="button">Pause</button>
+        <button id="exportBtn" class="btn btn-export" type="button">Export CSV</button>
+    </div>
+
+    <div class="chart-container">
+        <canvas id="forceChart"></canvas>
+    </div>
+    <div class="footer">
+        Continuous HX711 sampling  |  Chart refresh 100 ms  |  Rolling window of the latest 300 points<br>
+        Auto-tare runs on boot (cell unloaded). Zero tracking keeps the reading at 0.00 N until a load is applied.
+    </div>
+
+    <script>
+        const ctx = document.getElementById('forceChart').getContext('2d');
+
+        let forceData = [];
+        const MAX_POINTS = 300;
+        const POLL_INTERVAL = 100;   // Fast chart refresh (ms)
+
+        let chart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                datasets: [{
+                    label: 'Force (N)',
+                    data: [],
+                    borderColor: '#1f77b4',
+                    backgroundColor: 'rgba(31, 119, 180, 0.10)',
+                    borderWidth: 1.5,
+                    // ---------- Dot-and-line style ----------
+                    showLine: true,
+                    pointRadius: 2,
+                    pointHoverRadius: 5,
+                    pointBackgroundColor: '#1f77b4',
+                    pointBorderColor: '#1f77b4',
+                    pointBorderWidth: 0,
+                    fill: false,
+                    tension: 0.20,
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                animation: { duration: 0 },
+                interaction: { mode: 'index', intersect: false },
+                scales: {
+                    x: {
+                        type: 'linear',
+                        title: { display: true, text: 'Sample index',
+                                 color: '#4a5b70', font: { size: 13 } },
+                        grid: { color: 'rgba(20, 60, 110, 0.08)' },
+                        ticks: { color: '#4a5b70', maxTicksLimit: 10, stepSize: 20 },
+                        min: 1, max: MAX_POINTS
+                    },
+                    y: {
+                        title: { display: true, text: 'Force (N)',
+                                 color: '#4a5b70', font: { size: 13 } },
+                        grid: { color: 'rgba(20, 60, 110, 0.08)' },
+                        ticks: {
+                            color: '#4a5b70',
+                            callback: function (value) {
+                                return Number(value).toFixed(2) + ' N';
+                            }
+                        },
+                        beginAtZero: false
+                    }
+                },
+                plugins: {
+                    legend: { labels: { color: '#33465c' } },
+                    tooltip: {
+                        backgroundColor: 'rgba(255, 255, 255, 0.96)',
+                        titleColor: '#12558f',
+                        bodyColor: '#33465c',
+                        borderColor: '#1f77b4',
+                        borderWidth: 1,
+                        callbacks: {
+                            title: function (items) {
+                                return 'Sample ' + items[0].parsed.x;
+                            },
+                            label: function (context) {
+                                return 'Force: ' + context.parsed.y.toFixed(3) + ' N';
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        const currentForceSpan = document.getElementById('currentForce');
+        const sampleCountSpan  = document.getElementById('sampleCount');
+        const statusLed        = document.getElementById('statusLed');
+        const statusText       = document.getElementById('statusText');
+
+        const calibBtn  = document.getElementById('calibBtn');
+        const startBtn  = document.getElementById('startBtn');
+        const pauseBtn  = document.getElementById('pauseBtn');
+        const exportBtn = document.getElementById('exportBtn');
+
+        let collecting = false;
+        let timer = null;
+
+        function syncChart() {
+            chart.data.datasets[0].data = forceData.map(function (v, i) {
+                return { x: i + 1, y: v };
+            });
+            chart.update('none');
+        }
+
+        function updateForce(force) {
+            if (force === null || force === undefined || !isFinite(force)) return;
+            forceData.push(force);
+            if (forceData.length > MAX_POINTS) forceData.shift();
+            currentForceSpan.textContent = force.toFixed(3);
+            sampleCountSpan.textContent = forceData.length;
+            syncChart();
+        }
+
+        function updateControlUI() {
+            startBtn.disabled = collecting;
+            pauseBtn.disabled = !collecting;
+            if (collecting) {
+                statusLed.classList.remove('paused');
+                statusText.textContent = 'Collecting';
+            } else {
+                statusLed.classList.add('paused');
+                statusText.textContent = 'Paused';
+            }
+        }
+
+        async function fetchLatestForce() {
+            if (!collecting) return;
+            try {
+                const resp = await fetch('/force');
+                const data = await resp.json();
+                if (data && data.force !== undefined && data.force !== null) {
+                    updateForce(Number(data.force));
+                }
+            } catch (e) {
+                console.error('Failed to fetch force:', e);
+            }
+        }
+
+        async function loadHistory() {
+            try {
+                const resp = await fetch('/history');
+                const history = await resp.json();
+                if (!Array.isArray(history)) return;
+                forceData = [];
+                const start = Math.max(0, history.length - MAX_POINTS);
+                for (let i = start; i < history.length; i++) {
+                    const v = Number(history[i]);
+                    if (!isFinite(v)) continue;
+                    forceData.push(v);
+                }
+                if (forceData.length > 0) {
+                    currentForceSpan.textContent =
+                        forceData[forceData.length - 1].toFixed(3);
+                } else {
+                    currentForceSpan.textContent = '--';
+                }
+                sampleCountSpan.textContent = forceData.length;
+                syncChart();
+            } catch (e) {
+                console.error('Failed to load history:', e);
+            }
+        }
+
+        async function refreshStatus() {
+            try {
+                const resp = await fetch('/status');
+                const s = await resp.json();
+                collecting = !!s.collecting;
+                updateControlUI();
+                if (collecting && timer === null) {
+                    timer = setInterval(fetchLatestForce, POLL_INTERVAL);
+                }
+            } catch (e) {
+                console.error('Failed to query status:', e);
+                updateControlUI();
+            }
+        }
+
+        async function startCollecting() {
+            try { await fetch('/start'); } catch (e) { console.error(e); }
+            collecting = true;
+            updateControlUI();
+            if (timer === null) timer = setInterval(fetchLatestForce, POLL_INTERVAL);
+            fetchLatestForce();
+        }
+
+        async function pauseCollecting() {
+            try { await fetch('/stop'); } catch (e) { console.error(e); }
+            collecting = false;
+            updateControlUI();
+            if (timer !== null) { clearInterval(timer); timer = null; }
+        }
+
+        async function calibrateSensor() {
+            const input = prompt(
+                'Load cell calibration (force display in Newtons)\n\n' +
+                '• Enter 0   → TARE  (cell unloaded, re-establish zero)\n' +
+                '• Enter N>0 → SPAN  (cell carries a known mass of N grams)\n\n' +
+                'Tip: run 0 first, then place the known mass and enter N.',
+                '0'
+            );
+            if (input === null) return;
+
+            const refMass = parseFloat(input);
+            if (!isFinite(refMass)) {
+                alert('Invalid input. Please enter a number.');
+                return;
+            }
+
+            const oldText = calibBtn.textContent;
+            calibBtn.disabled = true;
+            calibBtn.textContent = 'Calibrating...';
+
+            try {
+                const resp = await fetch('/calibrate?ref=' + encodeURIComponent(refMass));
+                const data = await resp.json();
+                if (data.ok === false) {
+                    alert('Calibration failed:\n' + (data.msg || 'unknown error'));
+                } else if (data.ok) {
+                    alert(
+                        'Calibration complete.\n\n' +
+                        'Reference mass  : ' + data.ref_mass.toFixed(2) + ' g\n' +
+                        'Reference force : ' + data.ref_force.toFixed(4) + ' N\n' +
+                        'Average counts  : ' + data.counts.toFixed(0) + '\n' +
+                        'Raw reading     : ' + data.raw_force.toFixed(4) + ' N\n' +
+                        'Zero offset     : ' + data.offset.toFixed(0) + ' counts\n' +
+                        'Scale factor    : ' + data.scale.toFixed(2) + ' counts/N\n' +
+                        'Calibrated      : ' + data.final_force.toFixed(4) + ' N\n' +
+                        'Samples         : ' + data.samples
+                    );
+                } else {
+                    alert('Calibration failed: unknown response.');
+                }
+            } catch (e) {
+                alert('Calibration request failed: ' + e);
+            } finally {
+                calibBtn.disabled = false;
+                calibBtn.textContent = oldText;
+            }
+        }
+
+        function pad2(n) { return n < 10 ? '0' + n : '' + n; }
+
+        function buildFileName() {
+            const d = new Date();
+            const stamp = d.getFullYear() +
+                          pad2(d.getMonth() + 1) +
+                          pad2(d.getDate()) + '_' +
+                          pad2(d.getHours()) +
+                          pad2(d.getMinutes()) +
+                          pad2(d.getSeconds());
+            return 'force_' + stamp + '.csv';
+        }
+
+        function exportCSV() {
+            if (!forceData || forceData.length === 0) {
+                alert('No data to export. Click "Start" to acquire data first.');
+                return;
+            }
+            let csv = '\ufeffIndex,Force(N)\n';
+            for (let i = 0; i < forceData.length; i++) {
+                const v = Number(forceData[i]);
+                csv += (i + 1) + ',' + (isFinite(v) ? v.toFixed(4) : '') + '\n';
+            }
+            csv += '\nSummary,Value\n';
+            csv += 'Samples,' + forceData.length + '\n';
+
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = buildFileName();
+            a.style.display = 'none';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+        }
+
+        calibBtn.addEventListener('click', calibrateSensor);
+        startBtn.addEventListener('click', startCollecting);
+        pauseBtn.addEventListener('click', pauseCollecting);
+        exportBtn.addEventListener('click', exportCSV);
+
+        window.addEventListener('load', async function () {
+            updateControlUI();
+            await loadHistory();
+            await refreshStatus();
+        });
+    </script>
+</body>
+</html>
