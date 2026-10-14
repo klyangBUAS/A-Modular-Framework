@@ -1,0 +1,613 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pico W Distance &amp; Speed</title>
+    <!-- Chart.js loaded from the local static/ directory -->
+    <script src="static/chart.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        /* ---------- Light academic theme ---------- */
+        body {
+            background: #f2f5f9;
+            color: #22303f;
+            font-family: 'Segoe UI', Arial, 'Helvetica Neue', sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+            min-height: 100vh;
+        }
+        h1 {
+            color: #12558f;
+            margin-bottom: 14px;
+            font-weight: 500;
+            letter-spacing: 0.5px;
+            font-size: 1.45rem;
+        }
+
+        /* ---------- Info panel ---------- */
+        .info-panel {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            align-items: center;
+            gap: 14px 34px;
+            background: #ffffff;
+            padding: 12px 26px;
+            border-radius: 12px;
+            border-left: 6px solid #1f7ae0;
+            box-shadow: 0 2px 10px rgba(20, 60, 110, 0.08);
+            margin-bottom: 16px;
+            width: 92%;
+            max-width: 1200px;
+        }
+        .info-item {
+            font-size: 1rem;
+            color: #33465c;
+            letter-spacing: 0.3px;
+        }
+        .info-item b {
+            color: #12558f;
+            font-weight: 600;
+        }
+        #currentDist {
+            color: #c92a2a;
+            font-size: 1.45rem;
+            font-weight: 700;
+            margin-left: 4px;
+        }
+        #currentSpeed {
+            color: #d9480f;
+            font-size: 1.45rem;
+            font-weight: 700;
+            margin-left: 4px;
+        }
+        .unit { color: #6b7c93; font-size: 0.9rem; }
+
+        /* ---------- Toolbar ---------- */
+        .toolbar {
+            width: 92%;
+            max-width: 1200px;
+            display: flex;
+            flex-wrap: nowrap;
+            justify-content: center;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 14px;
+        }
+        .btn {
+            border: none;
+            border-radius: 8px;
+            padding: 10px 24px;
+            font-size: 0.95rem;
+            font-family: inherit;
+            letter-spacing: 0.8px;
+            color: #ffffff;
+            cursor: pointer;
+            white-space: nowrap;
+            min-width: 110px;
+            transition: transform 0.15s, box-shadow 0.15s, opacity 0.15s;
+        }
+        .btn:hover:not(:disabled) { transform: translateY(-2px); }
+        .btn:active:not(:disabled) { transform: translateY(0); }
+        .btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+            box-shadow: none;
+            transform: none;
+        }
+        .btn-calib {
+            background: linear-gradient(135deg, #8e5cf7, #5b3fd6);
+            box-shadow: 0 4px 12px rgba(110, 80, 240, 0.25);
+        }
+        .btn-start {
+            background: linear-gradient(135deg, #22b573, #0f8f57);
+            box-shadow: 0 4px 12px rgba(20, 160, 100, 0.25);
+        }
+        .btn-pause {
+            background: linear-gradient(135deg, #f0a020, #d97706);
+            box-shadow: 0 4px 12px rgba(220, 150, 20, 0.25);
+        }
+        .btn-export {
+            background: linear-gradient(135deg, #1f7ae0, #0b5fa5);
+            box-shadow: 0 4px 12px rgba(30, 120, 220, 0.25);
+        }
+
+        /* ---------- Chart row: two charts side by side ---------- */
+        .charts-row {
+            width: 92%;
+            max-width: 1200px;
+            display: flex;
+            flex-wrap: nowrap;
+            gap: 16px;
+            justify-content: center;
+            align-items: stretch;
+        }
+        .chart-container {
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 14px;
+            padding: 12px;
+            box-shadow: 0 4px 16px rgba(20, 60, 110, 0.10);
+            flex: 1 1 0;
+            min-width: 0;
+            height: 420px;
+            position: relative;
+        }
+        #distChart, #speedChart {
+            width: 100% !important;
+            height: 100% !important;
+        }
+
+        .footer {
+            margin-top: 16px;
+            color: #6b7c93;
+            font-size: 0.82rem;
+            text-align: center;
+            letter-spacing: 0.3px;
+        }
+
+        /* ---------- Status LED ---------- */
+        .status-led {
+            display: inline-block;
+            width: 11px;
+            height: 11px;
+            border-radius: 50%;
+            background: #16a34a;
+            box-shadow: 0 0 8px rgba(22, 163, 74, 0.8);
+            margin-right: 7px;
+            vertical-align: middle;
+        }
+        .status-led.paused {
+            background: #b0b8c4;
+            box-shadow: none;
+        }
+
+        /* ---------- Small screens (still one row) ---------- */
+        @media (max-width: 700px) {
+            .toolbar { gap: 8px; }
+            .btn {
+                padding: 8px 12px;
+                font-size: 0.8rem;
+                min-width: 0;
+                letter-spacing: 0;
+            }
+            h1 { font-size: 1.2rem; }
+            .charts-row { gap: 10px; }
+            .chart-container { height: 320px; padding: 8px; }
+            #currentDist, #currentSpeed { font-size: 1.2rem; }
+            .info-panel { gap: 10px 20px; padding: 10px 16px; }
+        }
+    </style>
+</head>
+<body>
+    <h1>Pico W Ultrasonic Distance &amp; Speed Monitor</h1>
+
+    <!-- Info panel: current distance, speed, sample count, status (SI units) -->
+    <div class="info-panel">
+        <div class="info-item"><b>Dist</b><span id="currentDist">--</span><span class="unit"> m</span></div>
+        <div class="info-item"><b>Speed</b><span id="currentSpeed">--</span><span class="unit"> m/s</span></div>
+        <div class="info-item"><b>Samples</b> <span id="sampleCount">0</span></div>
+        <div class="info-item">
+            <span class="status-led paused" id="statusLed"></span>
+            <span id="statusText">Paused</span>
+        </div>
+    </div>
+
+    <!-- Toolbar: Calibrate / Start / Pause / Export (single row) -->
+    <div class="toolbar">
+        <button id="calibBtn"  class="btn btn-calib"  type="button">Calibrate</button>
+        <button id="startBtn"  class="btn btn-start"  type="button">Start</button>
+        <button id="pauseBtn"  class="btn btn-pause"  type="button">Pause</button>
+        <button id="exportBtn" class="btn btn-export" type="button">Export CSV</button>
+    </div>
+
+    <!-- One row, two live charts: distance (left) + speed (right) -->
+    <div class="charts-row">
+        <div class="chart-container">
+            <canvas id="distChart"></canvas>
+        </div>
+        <div class="chart-container">
+            <canvas id="speedChart"></canvas>
+        </div>
+    </div>
+    <div class="footer">Sensor sampling 20 ms (~50 Hz)  |  Median + EMA filtering  |  Chart refresh 100 ms  |  SI units (m, m/s)  |  Rolling window of the latest 300 points</div>
+
+    <script>
+        // ===================== 1. Canvas contexts =====================
+        const distCtx  = document.getElementById('distChart').getContext('2d');
+        const speedCtx = document.getElementById('speedChart').getContext('2d');
+
+        // ===================== 2. Chart.js line charts (light theme, dot-and-line) =====================
+        let distData  = [];                // Distance values (max 300, metres)
+        let speedData = [];                // Speed values   (max 300, m/s)
+        const MAX_POINTS = 300;
+        const POLL_INTERVAL = 100;         // Polling interval (ms) - fast refresh
+
+        // Shared factory so both charts look identical except for colour/units
+        function createChart(ctx, datasetLabel, color, bgColor, yTitle, unit, beginAtZero) {
+            return new Chart(ctx, {
+                type: 'line',
+                data: {
+                    datasets: [{
+                        label: datasetLabel,
+                        data: [],
+                        borderColor: color,
+                        backgroundColor: bgColor,
+                        borderWidth: 1.5,
+                        // ---------- Dot-and-line style ----------
+                        showLine: true,
+                        pointRadius: 2,
+                        pointHoverRadius: 5,
+                        pointBackgroundColor: color,
+                        pointBorderColor: color,
+                        pointBorderWidth: 0,
+                        fill: false,
+                        tension: 0.20,
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    animation: { duration: 0 },
+                    interaction: { mode: 'index', intersect: false },
+                    scales: {
+                        x: {
+                            type: 'linear',
+                            title: {
+                                display: true,
+                                text: 'Sample index',
+                                color: '#4a5b70',
+                                font: { size: 12 }
+                            },
+                            grid: { color: 'rgba(20, 60, 110, 0.08)' },
+                            ticks: {
+                                color: '#4a5b70',
+                                maxTicksLimit: 8,
+                                stepSize: 20
+                            },
+                            min: 1,
+                            max: MAX_POINTS
+                        },
+                        y: {
+                            title: {
+                                display: true,
+                                text: yTitle,
+                                color: '#4a5b70',
+                                font: { size: 12 }
+                            },
+                            grid: { color: 'rgba(20, 60, 110, 0.08)' },
+                            ticks: {
+                                color: '#4a5b70',
+                                callback: function (value) {
+                                    return Number(value).toFixed(3) + ' ' + unit;
+                                }
+                            },
+                            beginAtZero: beginAtZero
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            labels: { color: '#33465c' }
+                        },
+                        tooltip: {
+                            backgroundColor: 'rgba(255, 255, 255, 0.96)',
+                            titleColor: '#12558f',
+                            bodyColor: '#33465c',
+                            borderColor: color,
+                            borderWidth: 1,
+                            callbacks: {
+                                title: function (items) {
+                                    return 'Sample ' + items[0].parsed.x;
+                                },
+                                label: function (context) {
+                                    return datasetLabel + ': ' +
+                                           context.parsed.y.toFixed(4) + ' ' + unit;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        let distChart = createChart(
+            distCtx,
+            'Distance (m)',
+            '#1f77b4', 'rgba(31, 119, 180, 0.10)',
+            'Distance (m)', 'm', true
+        );
+
+        let speedChart = createChart(
+            speedCtx,
+            'Speed (m/s)',
+            '#e8590c', 'rgba(232, 89, 12, 0.10)',
+            'Speed (m/s)', 'm/s', false
+        );
+
+        // ===================== 3. UI element references =====================
+        const currentDistSpan  = document.getElementById('currentDist');
+        const currentSpeedSpan = document.getElementById('currentSpeed');
+        const sampleCountSpan  = document.getElementById('sampleCount');
+        const statusLed        = document.getElementById('statusLed');
+        const statusText       = document.getElementById('statusText');
+
+        const calibBtn  = document.getElementById('calibBtn');
+        const startBtn  = document.getElementById('startBtn');
+        const pauseBtn  = document.getElementById('pauseBtn');
+        const exportBtn = document.getElementById('exportBtn');
+
+        // Runtime state
+        let collecting = false;   // acquisition running?
+        let timer = null;         // polling timer handle
+
+        // ===================== 4. Chart sync =====================
+        // Map arrays to {x, y} points starting from x = 1; window fixed at 1..300
+        function syncChart() {
+            distChart.data.datasets[0].data = distData.map(function (v, i) {
+                return { x: i + 1, y: v };
+            });
+            speedChart.data.datasets[0].data = speedData.map(function (v, i) {
+                return { x: i + 1, y: v };
+            });
+            distChart.update('none');
+            speedChart.update('none');
+        }
+
+        // ===================== 5. Data update =====================
+        function updateData(dist, speed) {
+            if (dist === null || dist === undefined || !isFinite(dist)) return;
+
+            const hasSpeed = (speed !== null && speed !== undefined && isFinite(speed));
+
+            distData.push(dist);
+            speedData.push(hasSpeed ? Number(speed) : 0);
+            if (distData.length > MAX_POINTS) {
+                distData.shift();
+                speedData.shift();
+            }
+
+            // SI units: 3 decimals for the live read-out (mm / mm/s resolution)
+            currentDistSpan.textContent = dist.toFixed(3);
+            if (hasSpeed) {
+                currentSpeedSpan.textContent = Number(speed).toFixed(3);
+            } else {
+                currentSpeedSpan.textContent = '--';
+            }
+            sampleCountSpan.textContent = distData.length;
+
+            syncChart();
+        }
+
+        // ===================== 6. Control state =====================
+        function updateControlUI() {
+            startBtn.disabled = collecting;
+            pauseBtn.disabled = !collecting;
+
+            if (collecting) {
+                statusLed.classList.remove('paused');
+                statusText.textContent = 'Collecting';
+            } else {
+                statusLed.classList.add('paused');
+                statusText.textContent = 'Paused';
+            }
+        }
+
+        // ===================== 7. Fetch latest distance + speed =====================
+        async function fetchLatestData() {
+            if (!collecting) return;          // no requests while paused
+            try {
+                const resp = await fetch('/dist');
+                const data = await resp.json();
+                if (data && data.dist !== undefined && data.dist !== null) {
+                    updateData(Number(data.dist), Number(data.speed));
+                }
+            } catch (e) {
+                console.error('Failed to fetch data:', e);
+            }
+        }
+
+        // ===================== 8. Load history on startup =====================
+        async function loadHistory() {
+            try {
+                const resp = await fetch('/history');
+                const data = await resp.json();
+
+                distData = [];
+                speedData = [];
+
+                if (Array.isArray(data)) {
+                    // Backward-compatible: plain distance array
+                    const start = Math.max(0, data.length - MAX_POINTS);
+                    for (let i = start; i < data.length; i++) {
+                        const v = Number(data[i]);
+                        if (!isFinite(v)) continue;
+                        distData.push(v);
+                        speedData.push(0);
+                    }
+                } else if (data && Array.isArray(data.dist)) {
+                    const dArr = data.dist;
+                    const sArr = Array.isArray(data.speed) ? data.speed : [];
+                    const start = Math.max(0, dArr.length - MAX_POINTS);
+                    for (let i = start; i < dArr.length; i++) {
+                        const v = Number(dArr[i]);
+                        if (!isFinite(v)) continue;
+                        distData.push(v);
+                        const s = Number(sArr[i]);
+                        speedData.push(isFinite(s) ? s : 0);
+                    }
+                }
+
+                if (distData.length > 0) {
+                    currentDistSpan.textContent =
+                        distData[distData.length - 1].toFixed(3);
+                    currentSpeedSpan.textContent =
+                        speedData[speedData.length - 1].toFixed(3);
+                } else {
+                    currentDistSpan.textContent  = '--';
+                    currentSpeedSpan.textContent = '--';
+                }
+                sampleCountSpan.textContent = distData.length;
+
+                syncChart();
+            } catch (e) {
+                console.error('Failed to load history:', e);
+            }
+        }
+
+        // ===================== 9. Query backend status =====================
+        async function refreshStatus() {
+            try {
+                const resp = await fetch('/status');
+                const s = await resp.json();
+                collecting = !!s.collecting;
+                updateControlUI();
+                if (collecting && timer === null) {
+                    timer = setInterval(fetchLatestData, POLL_INTERVAL);
+                }
+            } catch (e) {
+                console.error('Failed to query status:', e);
+                updateControlUI();
+            }
+        }
+
+        // ===================== 10. Start / Pause =====================
+        async function startCollecting() {
+            try {
+                await fetch('/start');
+            } catch (e) {
+                console.error('Failed to start acquisition:', e);
+            }
+            collecting = true;
+            updateControlUI();
+            if (timer === null) {
+                timer = setInterval(fetchLatestData, POLL_INTERVAL);
+            }
+            fetchLatestData();      // immediate first fetch
+        }
+
+        async function pauseCollecting() {
+            try {
+                await fetch('/stop');
+            } catch (e) {
+                console.error('Failed to pause acquisition:', e);
+            }
+            collecting = false;
+            updateControlUI();
+            if (timer !== null) {
+                clearInterval(timer);
+                timer = null;
+            }
+        }
+
+        // ===================== 11. Sensor calibration =====================
+        async function calibrateSensor() {
+            const input = prompt(
+                'Enter the true distance (m) for calibration:',
+                '0.5'
+            );
+            if (input === null) return;
+
+            const refDist = parseFloat(input);
+            if (!isFinite(refDist)) {
+                alert('Invalid input. Please enter a number.');
+                return;
+            }
+
+            const oldText = calibBtn.textContent;
+            calibBtn.disabled = true;
+            calibBtn.textContent = 'Calibrating...';
+
+            try {
+                const resp = await fetch('/calibrate?ref=' + encodeURIComponent(refDist));
+                const data = await resp.json();
+                if (data.ok) {
+                    alert(
+                        'Calibration complete.\n\n' +
+                        'Reference dist : ' + data.ref_dist.toFixed(3) + ' m\n' +
+                        'Raw reading    : ' + data.raw_dist.toFixed(3) + ' m\n' +
+                        'Offset         : ' + (data.offset >= 0 ? '+' : '') + data.offset.toFixed(3) + ' m\n' +
+                        'Calibrated     : ' + data.final_dist.toFixed(3) + ' m\n' +
+                        'Samples        : ' + data.samples
+                    );
+                } else {
+                    alert('Calibration failed: ' + (data.msg || 'unknown error'));
+                }
+            } catch (e) {
+                alert('Calibration request failed: ' + e);
+            } finally {
+                calibBtn.disabled = false;
+                calibBtn.textContent = oldText;
+            }
+        }
+
+        // ===================== 12. Export CSV =====================
+        function pad2(n) {
+            return n < 10 ? '0' + n : '' + n;
+        }
+
+        function buildFileName() {
+            const d = new Date();
+            const stamp = d.getFullYear() +
+                          pad2(d.getMonth() + 1) +
+                          pad2(d.getDate()) + '_' +
+                          pad2(d.getHours()) +
+                          pad2(d.getMinutes()) +
+                          pad2(d.getSeconds());
+            return 'distance_speed_' + stamp + '.csv';
+        }
+
+        function exportCSV() {
+            if (!distData || distData.length === 0) {
+                alert('No data to export. Click "Start" to acquire data first.');
+                return;
+            }
+
+            // Header + rows (\ufeff is BOM so Excel opens the file correctly)
+            let csv = '\ufeffIndex,Distance(m),Speed(m/s)\n';
+            for (let i = 0; i < distData.length; i++) {
+                const v = Number(distData[i]);
+                const s = Number(speedData[i]);
+                csv += (i + 1) + ',' +
+                       (isFinite(v) ? v.toFixed(4) : '') + ',' +
+                       (isFinite(s) ? s.toFixed(4) : '') + '\n';
+            }
+
+            // Summary section
+            csv += '\n';
+            csv += 'Summary,Value\n';
+            csv += 'Samples,' + distData.length + '\n';
+
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = buildFileName();
+            a.style.display = 'none';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+
+            setTimeout(function () {
+                URL.revokeObjectURL(url);
+            }, 1000);
+        }
+
+        // ===================== 13. Event bindings =====================
+        calibBtn.addEventListener('click', calibrateSensor);
+        startBtn.addEventListener('click', startCollecting);
+        pauseBtn.addEventListener('click', pauseCollecting);
+        exportBtn.addEventListener('click', exportCSV);
+
+        // ===================== 14. Page init =====================
+        window.addEventListener('load', async function () {
+            updateControlUI();
+            await loadHistory();
+            await refreshStatus();
+        });
+    </script>
+</body>
+</html>
