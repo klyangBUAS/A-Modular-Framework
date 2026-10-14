@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pico W BH1750 Light</title>
+    <!-- Chart.js loaded from the local static/ directory -->
+    <script src="static/chart.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        /* ---------- Light academic theme ---------- */
+        body {
+            background: #f2f5f9;
+            color: #22303f;
+            font-family: 'Segoe UI', Arial, 'Helvetica Neue', sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+            min-height: 100vh;
+        }
+        h1 {
+            color: #12558f;
+            margin-bottom: 14px;
+            font-weight: 500;
+            letter-spacing: 0.5px;
+            font-size: 1.45rem;
+        }
+
+        /* ---------- Info panel ---------- */
+        .info-panel {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            align-items: center;
+            gap: 14px 40px;
+            background: #ffffff;
+            padding: 12px 26px;
+            border-radius: 12px;
+            border-left: 6px solid #1f7ae0;
+            box-shadow: 0 2px 10px rgba(20, 60, 110, 0.08);
+            margin-bottom: 16px;
+            width: 92%;
+            max-width: 900px;
+        }
+        .info-item {
+            font-size: 1rem;
+            color: #33465c;
+            letter-spacing: 0.3px;
+        }
+        .info-item b {
+            color: #12558f;
+            font-weight: 600;
+        }
+        #currentLux {
+            color: #c92a2a;
+            font-size: 1.45rem;
+            font-weight: 700;
+            margin-left: 4px;
+        }
+        .unit { color: #6b7c93; font-size: 0.9rem; }
+
+        /* ---------- Toolbar ---------- */
+        .toolbar {
+            width: 92%;
+            max-width: 900px;
+            display: flex;
+            flex-wrap: nowrap;
+            justify-content: center;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 14px;
+        }
+        .btn {
+            border: none;
+            border-radius: 8px;
+            padding: 10px 24px;
+            font-size: 0.95rem;
+            font-family: inherit;
+            letter-spacing: 0.8px;
+            color: #ffffff;
+            cursor: pointer;
+            white-space: nowrap;
+            min-width: 110px;
+            transition: transform 0.15s, box-shadow 0.15s, opacity 0.15s;
+        }
+        .btn:hover:not(:disabled) { transform: translateY(-2px); }
+        .btn:active:not(:disabled) { transform: translateY(0); }
+        .btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+            box-shadow: none;
+            transform: none;
+        }
+        .btn-calib {
+            background: linear-gradient(135deg, #8e5cf7, #5b3fd6);
+            box-shadow: 0 4px 12px rgba(110, 80, 240, 0.25);
+        }
+        .btn-start {
+            background: linear-gradient(135deg, #22b573, #0f8f57);
+            box-shadow: 0 4px 12px rgba(20, 160, 100, 0.25);
+        }
+        .btn-pause {
+            background: linear-gradient(135deg, #f0a020, #d97706);
+            box-shadow: 0 4px 12px rgba(220, 150, 20, 0.25);
+        }
+        .btn-export {
+            background: linear-gradient(135deg, #1f7ae0, #0b5fa5);
+            box-shadow: 0 4px 12px rgba(30, 120, 220, 0.25);
+        }
+
+        /* ---------- Chart container ---------- */
+        .chart-container {
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 14px;
+            padding: 12px;
+            box-shadow: 0 4px 16px rgba(20, 60, 110, 0.10);
+            width: 92%;
+            max-width: 900px;
+            height: 420px;
+            position: relative;
+        }
+        #luxChart {
+            width: 100% !important;
+            height: 100% !important;
+        }
+
+        .footer {
+            margin-top: 16px;
+            color: #6b7c93;
+            font-size: 0.82rem;
+            text-align: center;
+            letter-spacing: 0.3px;
+            line-height: 1.6;
+        }
+
+        /* ---------- Status LED ---------- */
+        .status-led {
+            display: inline-block;
+            width: 11px;
+            height: 11px;
+            border-radius: 50%;
+            background: #16a34a;
+            box-shadow: 0 0 8px rgba(22, 163, 74, 0.8);
+            margin-right: 7px;
+            vertical-align: middle;
+        }
+        .status-led.paused {
+            background: #b0b8c4;
+            box-shadow: none;
+        }
+
+        /* ---------- Small screens (still one row) ---------- */
+        @media (max-width: 560px) {
+            .toolbar { gap: 8px; }
+            .btn {
+                padding: 8px 12px;
+                font-size: 0.8rem;
+                min-width: 0;
+                letter-spacing: 0;
+            }
+            h1 { font-size: 1.2rem; }
+        }
+    </style>
+</head>
+<body>
+    <h1>Pico W BH1750 Light Monitor</h1>
+
+    <!-- Info panel: current illuminance, sample count, status -->
+    <div class="info-panel">
+        <div class="info-item"><b>Light</b><span id="currentLux">--</span><span class="unit"> lx</span></div>
+        <div class="info-item"><b>Samples</b> <span id="sampleCount">0</span></div>
+        <div class="info-item">
+            <span class="status-led paused" id="statusLed"></span>
+            <span id="statusText">Paused</span>
+        </div>
+    </div>
+
+    <!-- Toolbar: Calibrate / Start / Pause / Export (single row) -->
+    <div class="toolbar">
+        <button id="calibBtn"  class="btn btn-calib"  type="button">Calibrate</button>
+        <button id="startBtn"  class="btn btn-start"  type="button">Start</button>
+        <button id="pauseBtn"  class="btn btn-pause"  type="button">Pause</button>
+        <button id="exportBtn" class="btn btn-export" type="button">Export CSV</button>
+    </div>
+
+    <div class="chart-container">
+        <canvas id="luxChart"></canvas>
+    </div>
+    <div class="footer">
+        Continuous BH1750 sampling (L-res, ~16 ms refresh)  |  Chart refresh 100 ms  |  Rolling window of the latest 300 points<br>
+        BH1750 5-pin module on I2C0 (SDA=GP16, SCL=GP17). Calibrate against a reference lux meter for absolute accuracy.
+    </div>
+
+    <script>
+        // ===================== 1. Canvas context =====================
+        const ctx = document.getElementById('luxChart').getContext('2d');
+
+        // ===================== 2. Chart.js line chart (light theme, dot-and-line) =====================
+        let luxData = [];                  // Illuminance values (lux, max 300)
+        const MAX_POINTS = 300;
+        const POLL_INTERVAL = 100;         // Polling interval (ms) - fast refresh
+
+        let chart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                datasets: [{
+                    label: 'Illuminance (lx)',
+                    data: [],
+                    borderColor: '#1f77b4',
+                    backgroundColor: 'rgba(31, 119, 180, 0.10)',
+                    borderWidth: 1.5,
+                    // ---------- Dot-and-line style ----------
+                    showLine: true,
+                    pointRadius: 2,
+                    pointHoverRadius: 5,
+                    pointBackgroundColor: '#1f77b4',
+                    pointBorderColor: '#1f77b4',
+                    pointBorderWidth: 0,
+                    fill: false,
+                    tension: 0.20,
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                animation: { duration: 0 },
+                interaction: { mode: 'index', intersect: false },
+                scales: {
+                    x: {
+                        type: 'linear',
+                        title: {
+                            display: true,
+                            text: 'Sample index',
+                            color: '#4a5b70',
+                            font: { size: 13 }
+                        },
+                        grid: { color: 'rgba(20, 60, 110, 0.08)' },
+                        ticks: {
+                            color: '#4a5b70',
+                            maxTicksLimit: 10,
+                            stepSize: 20
+                        },
+                        min: 1,
+                        max: MAX_POINTS
+                    },
+                    y: {
+                        title: {
+                            display: true,
+                            text: 'Illuminance (lx)',
+                            color: '#4a5b70',
+                            font: { size: 13 }
+                        },
+                        grid: { color: 'rgba(20, 60, 110, 0.08)' },
+                        ticks: {
+                            color: '#4a5b70',
+                            callback: function (value) {
+                                return Number(value).toFixed(1) + ' lx';
+                            }
+                        },
+                        beginAtZero: false
+                    }
+                },
+                plugins: {
+                    legend: {
+                        labels: { color: '#33465c' }
+                    },
+                    tooltip: {
+                        backgroundColor: 'rgba(255, 255, 255, 0.96)',
+                        titleColor: '#12558f',
+                        bodyColor: '#33465c',
+                        borderColor: '#1f77b4',
+                        borderWidth: 1,
+                        callbacks: {
+                            title: function (items) {
+                                return 'Sample ' + items[0].parsed.x;
+                            },
+                            label: function (context) {
+                                return 'Illuminance: ' + context.parsed.y.toFixed(1) + ' lx';
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        // ===================== 3. UI element references =====================
+        const currentLuxSpan = document.getElementById('currentLux');
+        const sampleCountSpan = document.getElementById('sampleCount');
+        const statusLed       = document.getElementById('statusLed');
+        const statusText      = document.getElementById('statusText');
+
+        const calibBtn  = document.getElementById('calibBtn');
+        const startBtn  = document.getElementById('startBtn');
+        const pauseBtn  = document.getElementById('pauseBtn');
+        const exportBtn = document.getElementById('exportBtn');
+
+        // Runtime state
+        let collecting = false;   // acquisition running?
+        let timer = null;         // polling timer handle
+
+        // ===================== 4. Chart sync =====================
+        function syncChart() {
+            chart.data.datasets[0].data = luxData.map(function (v, i) {
+                return { x: i + 1, y: v };
+            });
+            chart.update('none');
+        }
+
+        // ===================== 5. Data update =====================
+        function updateLux(lux) {
+            if (lux === null || lux === undefined || !isFinite(lux)) return;
+
+            luxData.push(lux);
+            if (luxData.length > MAX_POINTS) {
+                luxData.shift();
+            }
+
+            currentLuxSpan.textContent = lux.toFixed(1);
+            sampleCountSpan.textContent = luxData.length;
+
+            syncChart();
+        }
+
+        // ===================== 6. Control state =====================
+        function updateControlUI() {
+            startBtn.disabled = collecting;
+            pauseBtn.disabled = !collecting;
+
+            if (collecting) {
+                statusLed.classList.remove('paused');
+                statusText.textContent = 'Collecting';
+            } else {
+                statusLed.classList.add('paused');
+                statusText.textContent = 'Paused';
+            }
+        }
+
+        // ===================== 7. Fetch latest lux =====================
+        async function fetchLatestLux() {
+            if (!collecting) return;
+            try {
+                const resp = await fetch('/lux');
+                const data = await resp.json();
+                if (data && data.lux !== undefined && data.lux !== null) {
+                    updateLux(Number(data.lux));
+                }
+            } catch (e) {
+                console.error('Failed to fetch lux:', e);
+            }
+        }
+
+        // ===================== 8. Load history on startup =====================
+        async function loadHistory() {
+            try {
+                const resp = await fetch('/history');
+                const history = await resp.json();
+                if (!Array.isArray(history)) return;
+
+                luxData = [];
+
+                const start = Math.max(0, history.length - MAX_POINTS);
+                for (let i = start; i < history.length; i++) {
+                    const v = Number(history[i]);
+                    if (!isFinite(v)) continue;
+                    luxData.push(v);
+                }
+
+                if (luxData.length > 0) {
+                    currentLuxSpan.textContent = luxData[luxData.length - 1].toFixed(1);
+                } else {
+                    currentLuxSpan.textContent = '--';
+                }
+                sampleCountSpan.textContent = luxData.length;
+
+                syncChart();
+            } catch (e) {
+                console.error('Failed to load history:', e);
+            }
+        }
+
+        // ===================== 9. Query backend status =====================
+        async function refreshStatus() {
+            try {
+                const resp = await fetch('/status');
+                const s = await resp.json();
+                collecting = !!s.collecting;
+                updateControlUI();
+                if (collecting && timer === null) {
+                    timer = setInterval(fetchLatestLux, POLL_INTERVAL);
+                }
+            } catch (e) {
+                console.error('Failed to query status:', e);
+                updateControlUI();
+            }
+        }
+
+        // ===================== 10. Start / Pause =====================
+        async function startCollecting() {
+            try {
+                await fetch('/start');
+            } catch (e) {
+                console.error('Failed to start acquisition:', e);
+            }
+            collecting = true;
+            updateControlUI();
+            if (timer === null) {
+                timer = setInterval(fetchLatestLux, POLL_INTERVAL);
+            }
+            fetchLatestLux();      // immediate first fetch
+        }
+
+        async function pauseCollecting() {
+            try {
+                await fetch('/stop');
+            } catch (e) {
+                console.error('Failed to pause acquisition:', e);
+            }
+            collecting = false;
+            updateControlUI();
+            if (timer !== null) {
+                clearInterval(timer);
+                timer = null;
+            }
+        }
+
+        // ===================== 11. BH1750 calibration =====================
+        async function calibrateSensor() {
+            const input = prompt(
+                'BH1750 illuminance calibration\n\n' +
+                'Place the sensor under a light source of known intensity\n' +
+                'and enter its true illuminance in lux (e.g. 500).\n\n' +
+                'Enter 0 to make the current ambient level the new "zero"\n' +
+                '(relative-light mode).',
+                '500'
+            );
+            if (input === null) return;
+
+            const refLux = parseFloat(input);
+            if (!isFinite(refLux)) {
+                alert('Invalid input. Please enter a number.');
+                return;
+            }
+
+            const oldText = calibBtn.textContent;
+            calibBtn.disabled = true;
+            calibBtn.textContent = 'Calibrating...';
+
+            try {
+                const resp = await fetch('/calibrate?ref=' + encodeURIComponent(refLux));
+                const data = await resp.json();
+                if (data.ok === false) {
+                    alert('Calibration failed:\n' + (data.msg || 'unknown error'));
+                } else if (data.ok) {
+                    alert(
+                        'Calibration complete.\n\n' +
+                        'Reference lux : ' + data.ref_lux.toFixed(2) + ' lx\n' +
+                        'Measured mean : ' + data.mean_lux.toFixed(2) + ' lx\n' +
+                        'Offset        : ' + (data.offset >= 0 ? '+' : '') + data.offset.toFixed(2) + ' lx\n' +
+                        'Calibrated    : ' + data.final_lux.toFixed(2) + ' lx\n' +
+                        'Samples       : ' + data.samples
+                    );
+                } else {
+                    alert('Calibration failed: unknown response.');
+                }
+            } catch (e) {
+                alert('Calibration request failed: ' + e);
+            } finally {
+                calibBtn.disabled = false;
+                calibBtn.textContent = oldText;
+            }
+        }
+
+        // ===================== 12. Export CSV =====================
+        function pad2(n) {
+            return n < 10 ? '0' + n : '' + n;
+        }
+
+        function buildFileName() {
+            const d = new Date();
+            const stamp = d.getFullYear() +
+                          pad2(d.getMonth() + 1) +
+                          pad2(d.getDate()) + '_' +
+                          pad2(d.getHours()) +
+                          pad2(d.getMinutes()) +
+                          pad2(d.getSeconds());
+            return 'light_' + stamp + '.csv';
+        }
+
+        function exportCSV() {
+            if (!luxData || luxData.length === 0) {
+                alert('No data to export. Click "Start" to acquire data first.');
+                return;
+            }
+
+            let csv = '\ufeffIndex,Illuminance(lux)\n';
+            for (let i = 0; i < luxData.length; i++) {
+                const v = Number(luxData[i]);
+                csv += (i + 1) + ',' + (isFinite(v) ? v.toFixed(2) : '') + '\n';
+            }
+
+            csv += '\n';
+            csv += 'Summary,Value\n';
+            csv += 'Samples,' + luxData.length + '\n';
+
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = buildFileName();
+            a.style.display = 'none';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+
+            setTimeout(function () {
+                URL.revokeObjectURL(url);
+            }, 1000);
+        }
+
+        // ===================== 13. Event bindings =====================
+        calibBtn.addEventListener('click', calibrateSensor);
+        startBtn.addEventListener('click', startCollecting);
+        pauseBtn.addEventListener('click', pauseCollecting);
+        exportBtn.addEventListener('click', exportCSV);
+
+        // ===================== 14. Page init =====================
+        window.addEventListener('load', async function () {
+            updateControlUI();
+            await loadHistory();
+            await refreshStatus();
+        });
+    </script>
+</body>
+</html>
